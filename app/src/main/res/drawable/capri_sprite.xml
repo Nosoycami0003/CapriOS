@@ -1,0 +1,29 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+
+    <!-- oreja izquierda -->
+    <path android:fillColor="#13131A" android:pathData="M20,42 L6,14 L34,34 Z"/>
+    <!-- oreja derecha -->
+    <path android:fillColor="#13131A" android:pathData="M100,42 L114,14 L86,34 Z"/>
+
+    <!-- brillo punta oreja izquierda -->
+    <path android:fillColor="#00F0FF" android:pathData="M6,14 L16,21 L11,26 Z"/>
+    <!-- brillo punta oreja derecha -->
+    <path android:fillColor="#00F0FF" android:pathData="M114,14 L104,21 L109,26 Z"/>
+
+    <!-- cabeza (rectangulo con esquinas cortadas) -->
+    <path android:fillColor="#13131A" android:pathData="M26,40 L94,40 L104,50 L104,92 L94,102 L26,102 L16,92 L16,50 Z"/>
+
+    <!-- visor / ojos -->
+    <path android:fillColor="#00F0FF" android:pathData="M34,62 L86,62 L92,68 L92,76 L86,82 L34,82 L28,76 L28,68 Z"/>
+
+    <!-- division central del visor -->
+    <path android:fillColor="#13131A" android:pathData="M58,62 L62,62 L62,82 L58,82 Z"/>
+
+    <!-- boca / luz inferior -->
+    <path android:fillColor="#FF2DAE" android:pathData="M50,90 L70,90 L74,94 L70,98 L50,98 L46,94 Z"/>
+
+</vector>
