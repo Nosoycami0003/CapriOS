@@ -3,14 +3,24 @@ package com.endrunners.capri
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.PixelFormat
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.media.AudioManager
+import android.net.Uri
 import android.os.*
+import android.provider.MediaStore
+import android.provider.Settings
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.view.*
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import java.util.Locale
 import kotlin.random.Random
 
@@ -22,6 +32,9 @@ class CapriService : Service(), TextToSpeech.OnInitListener {
     private lateinit var speechBubble: TextView
     private lateinit var params: WindowManager.LayoutParams
     private lateinit var tts: TextToSpeech
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var isListening = false
+    private var flashOn = false
 
     private val handler = Handler(Looper.getMainLooper())
     private var isWalking = true
@@ -66,7 +79,7 @@ class CapriService : Service(), TextToSpeech.OnInitListener {
         }
 
         capriSprite = ImageView(this).apply {
-            setImageResource(android.R.drawable.sym_def_app_icon)
+            setImageResource(R.drawable.capri_sprite)
             layoutParams = LinearLayout.LayoutParams(180, 180)
         }
 
@@ -129,13 +142,161 @@ class CapriService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun onCapriTapped() {
-        val frases = listOf(
-            "Sistema en línea. ¿Qué frecuencia ponemos hoy?",
-            "Ojo con ese movimiento, corredor. ¿Necesitas un tip?",
-            "Capri escuchando. Dime qué quieres controlar.",
-            "Energía al 100%. ¿Subimos el bass en Spotify?"
+        if (isListening) return
+
+        val saludos = listOf(
+            "Te escucho, corredor.",
+            "Dime qué necesitas.",
+            "Capri en línea. Adelante.",
+            "Sistema listo para recibir órdenes."
         )
-        speakAndShow(frases.random())
+        speakAndShow(saludos.random())
+        handler.postDelayed({ startListening() }, 900)
+    }
+
+    private fun startListening() {
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            speakAndShow("Necesito permiso de micrófono. Abrí la app y concedémelo.")
+            return
+        }
+
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            speakAndShow("Este teléfono no tiene reconocimiento de voz disponible.")
+            return
+        }
+
+        speechRecognizer?.destroy()
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
+            setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) { isListening = true }
+                override fun onBeginningOfSpeech() {}
+                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onBufferReceived(buffer: ByteArray?) {}
+                override fun onEndOfSpeech() { isListening = false }
+                override fun onError(error: Int) {
+                    isListening = false
+                    speakAndShow("No te escuché bien, repetime.")
+                }
+                override fun onResults(results: Bundle?) {
+                    isListening = false
+                    val texto = results
+                        ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        ?.firstOrNull()
+                        ?.lowercase(Locale("es", "MX")) ?: ""
+                    if (texto.isNotBlank()) executeCommand(texto)
+                }
+                override fun onPartialResults(partialResults: Bundle?) {}
+                override fun onEvent(eventType: Int, params: Bundle?) {}
+            })
+        }
+
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-MX")
+        }
+        speechRecognizer?.startListening(intent)
+    }
+
+    private fun executeCommand(texto: String) {
+        val launchFlags = Intent.FLAG_ACTIVITY_NEW_TASK
+
+        when {
+            "whatsapp" in texto -> abrirApp("com.whatsapp", "No tenés WhatsApp instalado.")
+
+            "youtube" in texto -> abrirApp("com.google.android.youtube", "No tenés YouTube instalado.")
+
+            "cámara" in texto || "camara" in texto -> {
+                try {
+                    startActivity(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).addFlags(launchFlags))
+                    speakAndShow("Abriendo la cámara.")
+                } catch (e: Exception) {
+                    speakAndShow("No pude abrir la cámara.")
+                }
+            }
+
+            "configuración" in texto || "configuracion" in texto || "ajustes" in texto -> {
+                startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(launchFlags))
+                speakAndShow("Abriendo configuración.")
+            }
+
+            "linterna" in texto || "flash" in texto -> toggleLinterna()
+
+            "sube el volumen" in texto || "subí el volumen" in texto -> {
+                cambiarVolumen(true)
+                speakAndShow("Subiendo volumen.")
+            }
+
+            "baja el volumen" in texto || "bajá el volumen" in texto -> {
+                cambiarVolumen(false)
+                speakAndShow("Bajando volumen.")
+            }
+
+            "llama a" in texto || "llamar a" in texto -> {
+                val numero = texto.substringAfter("a ").filter { it.isDigit() }
+                if (numero.length >= 7) {
+                    startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$numero")).addFlags(launchFlags))
+                    speakAndShow("Marcando el número.")
+                } else {
+                    speakAndShow("Decime el número completo para llamar.")
+                }
+            }
+
+            "busca" in texto || "buscar" in texto -> {
+                val query = texto.substringAfter("buscar").substringAfter("busca").trim()
+                val searchIntent = Intent(Intent.ACTION_WEB_SEARCH).apply {
+                    putExtra(android.app.SearchManager.QUERY, query.ifBlank { texto })
+                    addFlags(launchFlags)
+                }
+                try {
+                    startActivity(searchIntent)
+                    speakAndShow("Buscando $query")
+                } catch (e: Exception) {
+                    speakAndShow("No pude abrir el buscador.")
+                }
+            }
+
+            else -> speakAndShow("Todavía no sé hacer eso, pero lo voy a aprender.")
+        }
+    }
+
+    private fun abrirApp(paquete: String, errorMsg: String) {
+        val intent = packageManager.getLaunchIntentForPackage(paquete)
+        if (intent != null) {
+            startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            speakAndShow("Abriendo.")
+        } else {
+            speakAndShow(errorMsg)
+        }
+    }
+
+    private fun toggleLinterna() {
+        try {
+            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val camId = cameraManager.cameraIdList.firstOrNull { id ->
+                cameraManager.getCameraCharacteristics(id)
+                    .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            }
+            if (camId != null) {
+                flashOn = !flashOn
+                cameraManager.setTorchMode(camId, flashOn)
+                speakAndShow(if (flashOn) "Linterna encendida." else "Linterna apagada.")
+            } else {
+                speakAndShow("Este teléfono no tiene linterna.")
+            }
+        } catch (e: Exception) {
+            speakAndShow("No pude controlar la linterna.")
+        }
+    }
+
+    private fun cambiarVolumen(subir: Boolean) {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        audioManager.adjustStreamVolume(
+            AudioManager.STREAM_MUSIC,
+            if (subir) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
+            AudioManager.FLAG_SHOW_UI
+        )
     }
 
     private fun startAutonomousBehavior() {
@@ -183,6 +344,7 @@ class CapriService : Service(), TextToSpeech.OnInitListener {
     override fun onDestroy() {
         super.onDestroy()
         tts.shutdown()
+        speechRecognizer?.destroy()
         windowManager.removeView(capriContainer)
     }
 
