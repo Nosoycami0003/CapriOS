@@ -1,13 +1,24 @@
 package com.endrunners.capri
 
 import android.content.Context
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
 
 object AIClient {
+
+    private const val TAG = "CapriAI"
+
+    private const val SYSTEM_PROMPT =
+        "Eres Capri, un asistente de voz que vive en la pantalla del celular. " +
+        "Responde siempre en español, en máximo dos frases cortas, sin markdown ni listas, " +
+        "porque tu respuesta se leerá en voz alta."
+
+    private class ApiError(val code: Int, body: String) : Exception("HTTP $code: $body")
 
     private val executor = Executors.newSingleThreadExecutor()
 
@@ -17,11 +28,12 @@ object AIClient {
         capturarPantalla: () -> String?,
         onResult: (String) -> Unit
     ) {
+        val appContext = context.applicationContext
         executor.execute {
             val respuesta = try {
-                val provider = CapriPrefs.getProvider(context)
-                val apiKey = CapriPrefs.getApiKey(context)
-                val model = CapriPrefs.getModel(context)
+                val provider = CapriPrefs.getProvider(appContext)
+                val apiKey = CapriPrefs.getApiKey(appContext)
+                val model = CapriPrefs.getModel(appContext)
 
                 if (apiKey.isBlank()) {
                     "No tenés ninguna clave de API configurada. Abrí Configurar IA y pegá la tuya."
@@ -34,33 +46,47 @@ object AIClient {
                         AIProvider.MISTRAL -> callMistral(apiKey, model, prompt)
                     }
                 }
+            } catch (e: ApiError) {
+                Log.e(TAG, e.message ?: "api error")
+                when (e.code) {
+                    400 -> "La IA rechazó la petición. Revisá el nombre del modelo en Configurar IA."
+                    401, 403 -> "Tu clave de API no es válida o no tiene permiso."
+                    404 -> "No encontré ese modelo. Revisá el nombre en Configurar IA."
+                    429 -> "Demasiadas peticiones o te quedaste sin saldo en la IA."
+                    else -> "La IA devolvió un error (${e.code})."
+                }
+            } catch (e: IOException) {
+                Log.e(TAG, "red", e)
+                "No pude conectarme a internet."
             } catch (e: Exception) {
-                "Hubo un error hablando con la IA: ${e.message}"
+                Log.e(TAG, "error", e)
+                "Hubo un error hablando con la IA."
             }
             onResult(respuesta)
         }
     }
 
     private fun postJson(urlStr: String, headers: Map<String, String>, body: JSONObject): JSONObject {
-        val url = URL(urlStr)
-        val conn = url.openConnection() as HttpURLConnection
-        conn.requestMethod = "POST"
-        conn.doOutput = true
-        conn.setRequestProperty("Content-Type", "application/json")
-        headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
-        conn.connectTimeout = 20000
-        conn.readTimeout = 30000
+        val conn = URL(urlStr).openConnection() as HttpURLConnection
+        try {
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+            conn.connectTimeout = 20000
+            conn.readTimeout = 30000
 
-        conn.outputStream.use { it.write(body.toString().toByteArray()) }
+            conn.outputStream.use { it.write(body.toString().toByteArray()) }
 
-        val code = conn.responseCode
-        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-        val texto = stream.bufferedReader().use { it.readText() }
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val texto = stream?.bufferedReader()?.use { it.readText() } ?: ""
 
-        if (code !in 200..299) {
-            throw RuntimeException("HTTP $code: $texto")
+            if (code !in 200..299) throw ApiError(code, texto)
+            return JSONObject(texto)
+        } finally {
+            conn.disconnect()
         }
-        return JSONObject(texto)
     }
 
     private fun callClaude(apiKey: String, model: String, prompt: String, imageBase64: String?): String {
@@ -83,6 +109,7 @@ object AIClient {
         val body = JSONObject().apply {
             put("model", model)
             put("max_tokens", 300)
+            put("system", SYSTEM_PROMPT)
             put("messages", JSONArray().put(JSONObject().apply {
                 put("role", "user")
                 put("content", contentArray)
@@ -114,10 +141,15 @@ object AIClient {
 
         val body = JSONObject().apply {
             put("model", model)
-            put("messages", JSONArray().put(JSONObject().apply {
-                put("role", "user")
-                put("content", contentArray)
-            }))
+            put("messages", JSONArray()
+                .put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", SYSTEM_PROMPT)
+                })
+                .put(JSONObject().apply {
+                    put("role", "user")
+                    put("content", contentArray)
+                }))
             put("max_tokens", 300)
         }
 
@@ -143,14 +175,18 @@ object AIClient {
         }
 
         val body = JSONObject().apply {
+            put("system_instruction", JSONObject().apply {
+                put("parts", JSONArray().put(JSONObject().apply { put("text", SYSTEM_PROMPT) }))
+            })
             put("contents", JSONArray().put(JSONObject().apply {
                 put("parts", parts)
             }))
         }
 
+        // La clave va en un header, no en la URL, para que no quede en logs
         val res = postJson(
-            "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey",
-            mapOf(),
+            "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent",
+            mapOf("x-goog-api-key" to apiKey),
             body
         )
         return res.getJSONArray("candidates").getJSONObject(0)
@@ -161,10 +197,16 @@ object AIClient {
     private fun callMistral(apiKey: String, model: String, prompt: String): String {
         val body = JSONObject().apply {
             put("model", model)
-            put("messages", JSONArray().put(JSONObject().apply {
-                put("role", "user")
-                put("content", prompt)
-            }))
+            put("max_tokens", 300)
+            put("messages", JSONArray()
+                .put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", SYSTEM_PROMPT)
+                })
+                .put(JSONObject().apply {
+                    put("role", "user")
+                    put("content", prompt)
+                }))
         }
 
         val res = postJson(
