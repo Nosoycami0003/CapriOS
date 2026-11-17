@@ -257,9 +257,16 @@ class CapriService : Service(), TextToSpeech.OnInitListener {
                 }
             }
 
-            else -> speakAndShow("Todavía no sé hacer eso, pero lo voy a aprender.")
-        }
-    }
+                        else -> {
+                speakAndShow("Dejame pensarlo...")
+                AIClient.ask(
+                    this,
+                    texto,
+                    { if (CapriPrefs.isVisionEnabled(this) && ScreenCapture.tienePermiso()) ScreenCapture.capturarComoBase64(this) else null }
+                ) { respuesta ->
+                    handler.post { speakAndShow(respuesta) }
+                }
+                        }
 
     private fun abrirApp(paquete: String, errorMsg: String) {
         val intent = packageManager.getLaunchIntentForPackage(paquete)
