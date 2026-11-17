@@ -5,9 +5,9 @@ enum class AIProvider(
     val supportsVision: Boolean,
     val defaultModel: String
 ) {
-    CLAUDE("Anthropic Claude", true, "claude-3-5-sonnet-20241022"),
-    OPENAI("OpenAI GPT", true, "gpt-4o-mini"),
-    GEMINI("Google Gemini", true, "gemini-1.5-flash"),
+    CLAUDE("Anthropic Claude (ve pantalla)", true, "claude-haiku-5-5"),
+    OPENAI("OpenAI GPT (ve pantalla)", true, "gpt-4o-mini"),
+    GEMINI("Google Gemini (ve pantalla)", true, "gemini-2.5-flash"),
     MISTRAL("Mistral (solo texto, no ve pantalla)", false, "mistral-small-latest");
 
     companion object {
