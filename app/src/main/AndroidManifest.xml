@@ -4,11 +4,12 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <uses-permission android:name="android.permission.CAMERA" />
 
     <queries>
         <package android:name="com.whatsapp" />
@@ -17,7 +18,7 @@
             <action android:name="android.speech.RecognitionService" />
         </intent>
         <intent>
-            <action android:name="android.media.action.IMAGE_CAPTURE" />
+            <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
         </intent>
         <intent>
             <action android:name="android.intent.action.WEB_SEARCH" />
@@ -25,6 +26,7 @@
     </queries>
 
     <application
+        android:allowBackup="false"
         android:label="Capri OS"
         android:theme="@style/Theme.Material3.DayNight.NoActionBar">
 
@@ -44,6 +46,10 @@
         <service
             android:name=".CapriService"
             android:exported="false"
-            android:foregroundServiceType="specialUse|mediaProjection" />
+            android:foregroundServiceType="specialUse|microphone|mediaProjection">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Asistente de voz flotante en pantalla" />
+        </service>
     </application>
 </manifest>
