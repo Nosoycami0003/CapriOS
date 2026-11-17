@@ -12,19 +12,26 @@ object CapriPrefs {
     private const val KEY_MODEL = "ai_model"
     private const val KEY_VISION_ENABLED = "vision_enabled"
 
-    private fun prefs(context: Context): SharedPreferences {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
+    @Volatile
+    private var cached: SharedPreferences? = null
 
-        return EncryptedSharedPreferences.create(
-            context,
-            FILE_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
+    // Se crea una sola vez: construir MasterKey + EncryptedSharedPreferences en cada llamada es lento.
+    private fun prefs(context: Context): SharedPreferences =
+        cached ?: synchronized(this) {
+            cached ?: run {
+                val appContext = context.applicationContext
+                val masterKey = MasterKey.Builder(appContext)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build()
+                EncryptedSharedPreferences.create(
+                    appContext,
+                    FILE_NAME,
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                ).also { cached = it }
+            }
+        }
 
     fun saveConfig(context: Context, provider: AIProvider, apiKey: String, model: String, visionEnabled: Boolean) {
         prefs(context).edit()
