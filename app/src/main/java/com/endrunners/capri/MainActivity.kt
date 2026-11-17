@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Button
+import android.widget.LinearLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 
@@ -14,11 +15,23 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
         val btnLaunch = Button(this).apply {
             text = "ACTIVAR CAPRI OS"
             setOnClickListener { checkAndStartCapri() }
         }
-        setContentView(btnLaunch)
+
+        val btnConfig = Button(this).apply {
+            text = "CONFIGURAR IA"
+            setOnClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
+        }
+
+        layout.addView(btnLaunch)
+        layout.addView(btnConfig)
+        setContentView(layout)
     }
 
     private fun checkAndStartCapri() {
